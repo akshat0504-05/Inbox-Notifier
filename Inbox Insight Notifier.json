@@ -1,0 +1,291 @@
+{
+  "name": "Inbox Insight Notifier",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -400,
+        32
+      ],
+      "id": "96977e33-4aef-45b7-baf3-8bda4da1be24",
+      "name": "Gmail Trigger",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "SOXCwEiSKRBx99zP",
+          "name": "My Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n    const j = item.json;\n\n    // --- Extract subject and sender ---\n    const subject = j.Subject || j.subject || '';\n    const from = j.From || j.from || j.sender || '';\n\n    // --- Extract body safely ---\n    let body = '';\n\n    if (j.payload && j.payload.parts) {\n        const textPart = j.payload.parts.find(p => p.mimeType === 'text/plain');\n        if (textPart && textPart.body && textPart.body.data) {\n            body = Buffer.from(textPart.body.data, 'base64').toString('utf-8');\n        }\n    } else if (j.payload && j.payload.body && j.payload.body.data) {\n        body = Buffer.from(j.payload.body.data, 'base64').toString('utf-8');\n    } else if (j.snippet) {\n        body = j.snippet;\n    }\n\n    // --- Remove signatures / disclaimers ---\n    body = body.replace(/--\\s*[\\s\\S]*$/gm, '');\n    body = body.replace(/Regards,.*$/gm, '');\n    body = body.replace(/Best regards,.*$/gm, '');\n    body = body.replace(/Sent from my .*$/gm, '');\n\n    // --- Preserve bullet points ---\n    body = body.replace(/(\\r\\n|\\r|\\n)[*-]\\s+/g, '\\n• ');\n\n    // --- Extract priority phrases ---\n    const urgentPhrases = ['urgent', 'asap', 'action required', 'immediate', 'deadline'];\n    let priorityNotes = [];\n    urgentPhrases.forEach(p => {\n        if (new RegExp(`\\\\b${p}\\\\b`, 'gi').test(body)) priorityNotes.push(p);\n    });\n    priorityNotes = priorityNotes.length ? `High-priority phrases detected: ${priorityNotes.join(', ')}` : 'None';\n\n    // --- Attachments / links ---\n    const attachmentsArr = (j.attachments || []).map(a => a.fileName || '').filter(Boolean);\n    const attachments = attachmentsArr.length ? attachmentsArr.join(', ') : 'None';\n    const links = (body.match(/https?:\\/\\/[^\\s)]+/g) || []).join(', ') || 'None';\n\n    // --- Detect if email contains images ---\n    const hasImage = attachmentsArr.some(name => /\\.(jpg|jpeg|png|gif)$/i.test(name)) ? 'Yes' : 'No';\n\n    // --- Optional: include PDF/DOC text ---\n    // Here we just note that a PDF/DOC exists; actual extraction requires extra nodes\n    const docAttachments = attachmentsArr.filter(name => /\\.(pdf|doc|docx)$/i.test(name));\n    const docTextNote = docAttachments.length \n        ? `Attachment(s) include document(s): ${docAttachments.join(', ')} (text extraction possible)` \n        : 'No documents attached';\n\n    // --- Build content for AI ---\n    j.contentForAI = `\nSubject: ${subject}\nFrom: ${from}\n\n${body}\n\n${priorityNotes}\nContains Image: ${hasImage}\n${docTextNote}\n\nAttachments: ${attachments}\nLinks: ${links}\n`;\n\n    // --- Store separately ---\n    j.attachmentNames = attachments;\n    j.extractedLinks = links;\n    j.priorityNotes = priorityNotes;\n    j.hasImage = hasImage;\n    j.docAttachments = docAttachments;\n\n    return item;\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        32
+      ],
+      "id": "fbc024ad-c42c-4a3b-95ef-de33824a2e44",
+      "name": "Content"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=AIzaSyBHe4o_6gHndWS5im-jz72WaYtTQ2fUrDw\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=contents[0].parts[0].text",
+              "value": "=Summarize this email and return JSON only with the following keys:\n{\n  \"summary\": \"2–3 sentence concise summary, mention images or documents if present\",\n  \"action\": \"1 imperative sentence of recommended next step\",\n  \"urgency\": \"Low / Medium / High\",\n  \"keywords\": \"comma-separated important keywords\",\n  \"attachments\": \"list of attachments\",\n  \"links\": \"significant links\",\n  \"images\": \"Yes/No if email contains images\",\n  \"documents\": \"List of PDF/DOC/DOCX attachments if any\",\n  \"due_date\": \"optional deadline if mentioned\"\n}\n\nEmail content (including subject, sender, body, attachments, links, images info, and documents info):\n{{$json[\"contentForAI\"]}}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        112,
+        32
+      ],
+      "id": "1b069475-7499-40ec-9818-a1c916ba84d0",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.urgency }}",
+                    "rightValue": "High",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a39ffc19-1b0c-4d89-8e55-f07951a2e292"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HighUrgency"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "39aaf449-baa6-4472-aded-c15cf3b0c1e0",
+                    "leftValue": "{{$json[\"urgency\"]}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SlackUrgency"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        640,
+        32
+      ],
+      "id": "2bea754b-8199-4819-83bd-07fb585aeede",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "+919039146504",
+        "toWhatsapp": true,
+        "message": "=⚠️ *URGENT EMAIL ALERT* ({{$json.urgency}})  \n\n📝 *Summary:*  \n{{$json.summary}}  \n\n✅ *Action:*  \n{{$json.action}}  \n\n📎 *Attachments:*  \n{{$json.attachments}}  \n\n🖼️ *Images:*  \n{{$json.images || 'None'}}  \n\n📄 *Documents:*  \n{{$json.documents || 'None'}}  \n\n🔗 *Links:*  \n{{$json.links}}  \n\n⏳ *Due Date:*  \n{{$json.due_date || 'N/A'}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        864,
+        -96
+      ],
+      "id": "8788be63-1945-42bd-8476-5e012af5bec7",
+      "name": "Send an SMS/MMS/WhatsApp message",
+      "credentials": {
+        "twilioApi": {
+          "id": "cm5no9rivsJX0FyG",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C01FMS2QSCD",
+          "mode": "list",
+          "cachedResultName": "general"
+        },
+        "text": "=📬 *New Email Alert* ({{$json.urgency}})  \n\n📝 *Summary:*  \n{{$json.summary}}  \n\n✅ *Action:*  \n{{$json.action}}  \n\n📎 *Attachments:*  \n{{$json.attachments}}  \n\n🖼️ *Images:*  \n{{$json.images || 'None'}}  \n\n📄 *Documents:*  \n{{$json.documents || 'None'}}  \n\n🔗 *Links:*  \n{{$json.links}}  \n\n⏳ *Due Date:*  \n{{$json.due_date || 'N/A'}}\n",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        864,
+        160
+      ],
+      "id": "7cc6ed2c-3ff4-460f-85ef-43557f480564",
+      "name": "Send a message",
+      "webhookId": "e8bb5646-7f87-47db-9613-9ceb354f7fc7",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "5jCoSAXbOS7egsvS",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Each incoming item is an email, all handled in one go\nreturn items.map(item => {\n    // Get Gemini's text field for this email\n    const rawText = item.json.candidates[0].content.parts[0].text;\n\n    // Remove ```json ... ``` backticks if present\n    const cleanedText = rawText.replace(/```json\\s*|```/g, '').trim();\n\n    // Safely parse JSON\n    let parsed = {};\n    try {\n        parsed = JSON.parse(cleanedText);\n    } catch (err) {\n        parsed = { error: 'JSON parse failed', raw: cleanedText };\n    }\n\n    // Return new item with parsed summary/action/etc.\n    return { json: parsed };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        32
+      ],
+      "id": "eefd3a54-8a82-41af-b183-27171ac0dca9",
+      "name": "Parse the model"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Parse the model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send an SMS/MMS/WhatsApp message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse the model": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "6c7cd405-8b93-4360-998a-4217d5b49415",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "015e074cb44c344e8a6005c46aefd3f838a8527dceb581ebe0cf079910501ef4"
+  },
+  "id": "zj1IYWoIqq4xwfYX",
+  "tags": []
+}
