@@ -1,0 +1,179 @@
+{
+  "name": "Inbox Insight Notifier",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -400,
+        32
+      ],
+      "id": "<YOUR KEY>",
+      "name": "Gmail Trigger",
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "<YOUR KEY>",
+          "name": "My Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* unchanged code here */"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        32
+      ],
+      "id": "<YOUR KEY>",
+      "name": "Content"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=<YOUR KEY>",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=contents[0].parts[0].text",
+              "value": "/* unchanged body here */"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        112,
+        32
+      ],
+      "id": "<YOUR KEY>",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [ /* unchanged rules */ ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        640,
+        32
+      ],
+      "id": "<YOUR KEY>",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "from": "<YOUR KEY>",
+        "to": "<YOUR KEY>",
+        "toWhatsapp": true,
+        "message": "=⚠️ *URGENT EMAIL ALERT* ..."
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        864,
+        -96
+      ],
+      "id": "<YOUR KEY>",
+      "name": "Send an SMS/MMS/WhatsApp message",
+      "credentials": {
+        "twilioApi": {
+          "id": "<YOUR KEY>",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "<YOUR KEY>",
+          "mode": "list",
+          "cachedResultName": "general"
+        },
+        "text": "=📬 *New Email Alert* ..."
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        864,
+        160
+      ],
+      "id": "<YOUR KEY>",
+      "name": "Send a message",
+      "webhookId": "<YOUR KEY>",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "<YOUR KEY>",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* unchanged code here */"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        32
+      ],
+      "id": "<YOUR KEY>",
+      "name": "Parse the model"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    /* unchanged connections */
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "<YOUR KEY>",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "<YOUR KEY>"
+  },
+  "id": "<YOUR KEY>",
+  "tags": []
+}
